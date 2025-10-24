@@ -84,3 +84,20 @@ def get_recorridos(db: Session = Depends(get_db)):
   recorridos = db.query(models.Recorrido).all()
   return recorridos
 
+# ========== ENDPOINTS POST ==========
+@app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"])
+def crear_linea(linea: schemas.LineaCreate, db: Session = Depends(get_db)):
+  db_linea = models.Linea(nombre=linea.nombre)
+  db.add(db_linea)
+  db.commit()
+  db.refresh(db_linea)
+  return db_linea
+
+@app.post('/recorridos/', response_model=schemas.Recorrido, status_code=status.HTTP_201_CREATED, tags=["Admin"])
+def crear_recorrido(recorrido: schemas.RecorridoCreate, db: Session = Depends(get_db)):
+  # Verificar que la línea existe
+  db_linea = db.query(models.Linea).filter(models.Linea.id == recorrido.linea_id).first()
+  if not db_linea:
+    raise HTTPException(status_code=404, detail="Línea no encontrada")
+  
+  db_recorrido = models.Recorrido(**recorrido.model_dump())

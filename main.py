@@ -101,3 +101,20 @@ def crear_recorrido(recorrido: schemas.RecorridoCreate, db: Session = Depends(ge
     raise HTTPException(status_code=404, detail="Línea no encontrada")
   
   db_recorrido = models.Recorrido(**recorrido.model_dump())
+  db.add(db_recorrido)
+  db.commit()
+  db.refresh(db_recorrido)
+  return db_recorrido
+
+@app.post('/horarios/', response_model=schemas.Horario, status_code=status.HTTP_201_CREATED, tags=["Admin"])
+def crear_horario(horario: schemas.HorarioCreate, db: Session = Depends(get_db)):
+  # Verificar que el recorrido existe
+  db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == horario.recorrido_id).first()
+  if not db_recorrido:
+    raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+  
+  db_horario = models.Horario(**horario.model_dump())
+  db.add(db_horario)
+  db.commit()
+  db.refresh(db_horario)
+  return db_horario

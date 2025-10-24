@@ -1,0 +1,13 @@
+# Entorno virtual
+venv/
+
+# Bases de datos locales
+*.db
+*.db-journal*
+
+# Archivos de Python
+__pycache__/
+*.pyc
+
+# Archivos de VS Code
+.vscode/

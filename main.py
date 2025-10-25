@@ -29,6 +29,8 @@ app = FastAPI(
 # --- Configuración del middleware de CORS ---
 origins = [
   "http://localhost:5173",
+  "http://localhost:3000",
+  "https://api-horarios-8uro.onrender.com/"
 ]
 
 app.add_middleware(

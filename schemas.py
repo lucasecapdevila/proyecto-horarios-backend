@@ -46,8 +46,8 @@ class Linea(LineaBase):
 
 # --- Esquema para la Conexión ---
 class Conexion(BaseModel):
-  tramo_1_salida: str
-  tramo_1_llegada: str
-  tramo_2_salida: str
-  tramo_2_llegada: str
+  tramo_a_salida: str
+  tramo_a_llegada: str
+  tramo_b_salida: str
+  tramo_b_llegada: str
   tiempo_espera_min: int

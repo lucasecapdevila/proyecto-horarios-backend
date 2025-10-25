@@ -1,13 +1,13 @@
 # --- Importación de librerías ---
 from fastapi import FastAPI, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Literal
 from datetime import datetime
 from contextlib import asynccontextmanager
 
 # --- Importación de archivos locales ---
-from . import models, schemas
-from .database import SessionLocal, engine, Base
+import models, schemas
+from database import SessionLocal, engine, Base
 
 # --- Importación del middleware de CORS ---
 from fastapi.middleware.cors import CORSMiddleware
@@ -140,14 +140,21 @@ def get_horarios_por_recorrido(
 @app.get('/conexiones/', response_model=List[schemas.Conexion], tags=["App"])
 def get_conexiones(
   tipo_dia: Literal["habil", "feriado", "sábado", "domingo"],
+  direccion: Literal["ida", "vuelta"] = "ida",
   db: Session = Depends(get_db)
 ):
   # Este es el principal endpoint. Busca conexiones entre el Tramo A y el Tramo B
-  # Asumiendo que los Tramos A y B son recorridos específicos predefinidos:
-  # - Tramo A: Recorrido Concepción -> San Miguel (ID = 1)
-  # - Tramo B: Recorrido San Miguel -> Leales (ID = 2)
-  ID_TRAMO_A = 1  # ID del Recorrido Tramo A
-  id_TRAMO_B = 2  # ID del Recorrido Tramo B
+  # Dependiendo de la dirección, se asignan los tramos correspondientes
+  # dirección "ida": Tramo A = Concepción -> San Miguel, Tramo B = San Miguel -> Leales
+  # dirección "vuelta": Tramo A = Leales -> San Miguel, Tramo B = San Miguel -> Concepción
+
+  # Asignamos los IDs de los tramos según la dirección
+  if direccion == "ida":
+    ID_TRAMO_A = 1  # ID del Recorrido Tramo A
+    id_TRAMO_B = 2  # ID del Recorrido Tramo B
+  else:  # dirección == "vuelta"
+    ID_TRAMO_A = 3  # ID del Recorrido Tramo A (vuelta)
+    id_TRAMO_B = 4  # ID del Recorrido Tramo B (vuelta)
 
   # Obtener horarios del Tramo A
   horarios_tramo_a = db.query(models.Horario).filter(

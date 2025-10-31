@@ -5,6 +5,9 @@ venv/
 *.db
 *.db-journal*
 
+# Archivos de entorno
+.env
+
 # Archivos de Python
 __pycache__/
 *.pyc

@@ -7,7 +7,7 @@ def get_user(db: Session, username: str):
 
 def create_user(db: Session, username: str, password: str, role):
   hashed_password = hash_password(password)
-  db_user = User(username=username, hashed_password=hashed_password, role=role)
+  db_user = User(username=username, userpassword=hashed_password, role=role)
   db.add(db_user)
   db.commit()
   db.refresh(db_user)

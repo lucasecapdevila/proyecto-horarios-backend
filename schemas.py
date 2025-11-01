@@ -64,14 +64,18 @@ class UserCreate(UserBase):
 
   @field_validator('userpassword')
   def validate_password(cls, v):
-    password_strength(v)
-    return v
+    # Validar requisitos de seguridad de la contraseña
+    return password_strength(v)
   
 class UserOut(UserBase):
   id: int
   class Config:
-    orm_mode = True
+    from_attributes = True
+
+class UserLogin(BaseModel):
+    username: str
+    userpassword: str
 
 class Token(BaseModel):
-  access_token: str
-  token_type: str = "bearer"
+    access_token: str
+    token_type: str = "bearer"

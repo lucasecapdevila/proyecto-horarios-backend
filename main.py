@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 # --- Importación de archivos locales ---
 import models, schemas
 from database import SessionLocal, engine, Base
+from auth.auth_routes import router as auth_router
 
 # --- Importación del middleware de CORS ---
 from fastapi.middleware.cors import CORSMiddleware
@@ -204,3 +205,6 @@ def get_conexiones(
     raise HTTPException(status_code=404, detail="No se encontraron combinaciones")
   
   return conexiones_encontradas
+
+# --- Incluir las rutas de autenticación ---
+app.include_router(auth_router)

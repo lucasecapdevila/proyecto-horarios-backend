@@ -5,11 +5,25 @@ from utils.validators import password_strength
 
 # --- Esquemas para Horarios ---
 class HorarioBase(BaseModel):
-  tipo_dia: Literal["habil", "feriado", "sábado", "domingo"]
+  tipo_dia: Literal["habil", "sábado", "domingo"]
   hora_salida: str = Field(..., pattern=r"^\d{2}:\d{2}$")
   hora_llegada: str = Field(..., pattern=r"^\d{2}:\d{2}$")
   recorrido_id: int
   directo: bool = False
+
+  @field_validator("hora_salida", "hora_llegada")
+  @classmethod
+  def valid_time(cls, v):
+      try:
+          partes = v.split(":")
+          if len(partes) != 2:
+              raise ValueError()
+          h, m = int(partes[0]), int(partes[1])
+          if not (0 <= h <= 23 and 0 <= m <= 59):
+              raise ValueError()
+      except Exception:
+          raise ValueError("La hora debe estar en formato HH:MM, entre 00:00 y 23:59")
+      return v
 
 class HorarioCreate(HorarioBase):
   pass

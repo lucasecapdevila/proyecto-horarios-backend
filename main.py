@@ -214,70 +214,89 @@ def get_horarios_por_recorrido(
   return horarios
 
 @app.get('/conexiones/', response_model=List[schemas.Conexion], tags=["App"])
-def get_conexiones(
-  tipo_dia: Literal["habil", "feriado", "sábado", "domingo"],
-  direccion: Literal["ida", "vuelta"] = "ida",
-  db: Session = Depends(get_db)
-):
-  # Este es el principal endpoint. Busca conexiones entre el Tramo A y el Tramo B
-  # Dependiendo de la dirección, se asignan los tramos correspondientes
-  # dirección "ida": Tramo A = Concepción -> San Miguel, Tramo B = San Miguel -> Leales
-  # dirección "vuelta": Tramo A = Leales -> San Miguel, Tramo B = San Miguel -> Concepción
+def calcular_conexiones(tipo_dia: str, direccion: str = 'ida', hora_actual: str = '00:00', db: Session = Depends(get_db)):
+    """
+    Calcula las conexiones óptimas solo para las que estén disponibles a partir de la hora_actual.
+    - tipo_dia: "habil", "sábado" o "domingo" (requerido)
+    - direccion: "ida" o "vuelta" (default: ida)
+    - hora_actual: solo devuelve las conexiones cuya salida de A sea >= hora_actual (default: 00:00)
+    """
+    # Validar hora_actual (igual que en HorarioBase)
+    try:
+        partes = hora_actual.split(":")
+        if len(partes) != 2:
+            raise ValueError()
+        h, m = int(partes[0]), int(partes[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError()
+    except Exception:
+        raise HTTPException(status_code=400, detail="hora_actual debe ser HH:MM entre 00:00 y 23:59")
 
-  # Asignamos los IDs de los tramos según la dirección
-  if direccion == "ida":
-    ID_TRAMO_A = 1  # ID del Recorrido Tramo A
-    id_TRAMO_B = 2  # ID del Recorrido Tramo B
-  else:  # dirección == "vuelta"
-    ID_TRAMO_A = 3  # ID del Recorrido Tramo A (vuelta)
-    id_TRAMO_B = 4  # ID del Recorrido Tramo B (vuelta)
+    # Este es el principal endpoint. Busca conexiones entre el Tramo A y el Tramo B
+    # Dependiendo de la dirección, se asignan los tramos correspondientes
+    # dirección "ida": Tramo A = Concepción -> San Miguel, Tramo B = San Miguel -> Leales
+    # dirección "vuelta": Tramo A = Leales -> San Miguel, Tramo B = San Miguel -> Concepción
 
-  # Obtener horarios del Tramo A
-  horarios_tramo_a = db.query(models.Horario).filter(
-    models.Horario.recorrido_id == ID_TRAMO_A,
-    models.Horario.tipo_dia == tipo_dia
-  ).order_by(models.Horario.hora_salida).all()
+    # Asignamos los IDs de los tramos según la dirección
+    if direccion == "ida":
+        ID_TRAMO_A = 1  # ID del Recorrido Tramo A
+        id_TRAMO_B = 2  # ID del Recorrido Tramo B
+    else:  # dirección == "vuelta"
+        ID_TRAMO_A = 3  # ID del Recorrido Tramo A (vuelta)
+        id_TRAMO_B = 4  # ID del Recorrido Tramo B (vuelta)
 
-  # Obtener horarios del Tramo B
-  horarios_tramo_b = db.query(models.Horario).filter(
-    models.Horario.recorrido_id == id_TRAMO_B,
-    models.Horario.tipo_dia == tipo_dia
-  ).order_by(models.Horario.hora_salida).all()
+    # Obtener horarios del Tramo A
+    horarios_tramo_a = db.query(models.Horario).filter(
+        models.Horario.recorrido_id == ID_TRAMO_A,
+        models.Horario.tipo_dia == tipo_dia
+    ).order_by(models.Horario.hora_salida).all()
 
-  if not horarios_tramo_a or not horarios_tramo_b:
-    raise HTTPException(status_code=404, detail="No se encontraron horarios para la conexión en ese tipo de día")
-  
-  # Buscar conexiones
-  conexiones_encontradas = []
-  FMT = "%H:%M"
-  for horario_a in horarios_tramo_a:
-    for horario_b in horarios_tramo_b:
-      try:
-        llegada_a = datetime.strptime(horario_a.hora_llegada, FMT)
-        salida_b = datetime.strptime(horario_b.hora_salida, FMT)
-      except ValueError:
-        continue  # Saltar horarios con formato incorrecto
+    # Obtener horarios del Tramo B
+    horarios_tramo_b = db.query(models.Horario).filter(
+        models.Horario.recorrido_id == id_TRAMO_B,
+        models.Horario.tipo_dia == tipo_dia
+    ).order_by(models.Horario.hora_salida).all()
 
-      # Si la salida del Tramo B es DESPUÉS de la llegada del Tramo A
-      if salida_b > llegada_a:
-        #* Se encuentra una conexión válida
-        diferencia = salida_b - llegada_a
-        espera_min = int(diferencia.total_seconds() / 60)
+    if not horarios_tramo_a or not horarios_tramo_b:
+        raise HTTPException(status_code=404, detail="No se encontraron horarios para la conexión en ese tipo de día")
+    
+    # Buscar conexiones
+    conexiones_encontradas = []
+    FMT = "%H:%M"
+    for horario_a in horarios_tramo_a:
+        for horario_b in horarios_tramo_b:
+            try:
+                llegada_a = datetime.strptime(horario_a.hora_llegada, FMT)
+                salida_b = datetime.strptime(horario_b.hora_salida, FMT)
+            except ValueError:
+                continue  # Saltar horarios con formato incorrecto
 
-        conexion = schemas.Conexion(
-          tramo_a_salida=horario_a.hora_salida,
-          tramo_a_llegada=horario_a.hora_llegada,
-          tramo_b_salida=horario_b.hora_salida,
-          tramo_b_llegada=horario_b.hora_llegada,
-          tiempo_espera_min=espera_min
-        )
-        conexiones_encontradas.append(conexion)
-        break  # Pasar al siguiente horario del Tramo A después de encontrar la primera conexión válida
+            # Si la salida del Tramo B es DESPUÉS de la llegada del Tramo A
+            if salida_b > llegada_a:
+                #* Se encuentra una conexión válida
+                diferencia = salida_b - llegada_a
+                espera_min = int(diferencia.total_seconds() / 60)
 
-  if not conexiones_encontradas:
-    raise HTTPException(status_code=404, detail="No se encontraron combinaciones")
-  
-  return conexiones_encontradas
+                conexion = schemas.Conexion(
+                    tramo_a_salida=horario_a.hora_salida,
+                    tramo_a_llegada=horario_a.hora_llegada,
+                    tramo_b_salida=horario_b.hora_salida,
+                    tramo_b_llegada=horario_b.hora_llegada,
+                    tiempo_espera_min=espera_min
+                )
+                conexiones_encontradas.append(conexion)
+                break  # Pasar al siguiente horario del Tramo A después de encontrar la primera conexión válida
+
+    if not conexiones_encontradas:
+        raise HTTPException(status_code=404, detail="No se encontraron combinaciones")
+    
+    # Añadir filtro por hora_actual
+    def str_to_minutos(hora):
+        h, m = map(int, hora.split(":"))
+        return h*60 + m
+    min_actual = str_to_minutos(hora_actual)
+    conexiones_filtradas = [c for c in conexiones_encontradas if str_to_minutos(c.tramo_a_salida) >= min_actual]
+    return conexiones_filtradas
 
 # --- CRUD de usuarios solo para administradores ---
 @app.get('/users/', response_model=List[schemas.UserOut], tags=["Usuarios"], dependencies=[Depends(get_admin_user)])

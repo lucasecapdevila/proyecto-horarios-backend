@@ -1,6 +1,7 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from database import Base
+import enum
 
 class Linea(Base):
   __tablename__ = "lineas"
@@ -29,3 +30,15 @@ class Horario(Base):
   directo = Column(Boolean, default=False)
   recorrido_id = Column(Integer, ForeignKey("recorridos.id"))
   recorrido = relationship("Recorrido", back_populates="horarios")
+
+class RoleEnum(enum.Enum):
+  admin = "Administrador"
+  user = "Usuario"
+
+class User(Base):
+  __tablename__ = "users"
+
+  id = Column(Integer, primary_key=True, index=True)
+  username = Column(String, unique=True, nullable=False)
+  userpassword = Column(String, nullable=False)
+  role = Column(Enum(RoleEnum), nullable=False, default=RoleEnum.user)

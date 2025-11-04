@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Literal
+from models import RoleEnum
+from utils.validators import password_strength
 
 # --- Esquemas para Horarios ---
 class HorarioBase(BaseModel):
@@ -52,3 +54,32 @@ class Conexion(BaseModel):
   tramo_b_salida: str
   tramo_b_llegada: str
   tiempo_espera_min: int
+
+class UserBase(BaseModel):
+  username: str = Field(..., min_length=3, max_length=25)
+  role: Optional[RoleEnum] = RoleEnum.admin
+
+class UserCreate(UserBase):
+  userpassword: str = Field(..., min_length=12)
+
+  @field_validator('userpassword')
+  def validate_password(cls, v):
+    # Validar requisitos de seguridad de la contraseña
+    return password_strength(v)
+  
+class UserOut(UserBase):
+  id: int
+  class Config:
+    from_attributes = True
+
+class UserLogin(BaseModel):
+    username: str
+    userpassword: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=25)
+    userpassword: str = Field(..., min_length=6, max_length=250)

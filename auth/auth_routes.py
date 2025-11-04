@@ -4,7 +4,7 @@ from database import SessionLocal
 from auth.crud_user import get_user, create_user, authenticate_user
 from auth.auth_utils import create_access_token, decode_access_token
 from models import RoleEnum
-from schemas import UserCreate, UserOut, Token, UserLogin
+from schemas import UserRegister, UserOut, Token, UserLogin
 from jose import JWTError
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
@@ -17,12 +17,12 @@ def get_db():
         db.close()
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
+def register_user(user: UserRegister, db: Session = Depends(get_db)):
     existing_user = get_user(db, user.username)
     if existing_user:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
-    
-    new_user = create_user(db, user.username, user.userpassword, user.role)
+    from models import RoleEnum
+    new_user = create_user(db, user.username, user.userpassword, RoleEnum.user)
     return new_user
 
 @router.post("/login", response_model=Token)

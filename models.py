@@ -41,4 +41,4 @@ class User(Base):
   id = Column(Integer, primary_key=True, index=True)
   username = Column(String, unique=True, nullable=False)
   userpassword = Column(String, nullable=False)
-  role = Column(Enum(RoleEnum), nullable=False, default=RoleEnum.admin)
+  role = Column(Enum(RoleEnum), nullable=False, default=RoleEnum.user)

@@ -103,11 +103,25 @@ def get_recorridos(db: Session = Depends(get_db)):
         resultado.append(recorrido_dict)
     return resultado
 
-@app.get('/horarios/', response_model=List[schemas.Horario], tags=["Admin"], dependencies=[Depends(get_admin_user)])
+@app.get('/horarios/', response_model=List[schemas.HorarioConRecorrido], tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def get_horarios(db: Session = Depends(get_db)):
     """Obtener todos los horarios (SOLO Administradores autenticados)"""
-    horarios = db.query(models.Horario).all()
-    return horarios
+    horarios = db.query(models.Horario).join(models.Horario.recorrido).join(models.Recorrido.linea).all()
+
+    resultado = []
+    for h in horarios:
+        resultado.append({
+            "id": h.id,
+            "tipo_dia": h.tipo_dia,
+            "hora_salida": h.hora_salida,
+            "hora_llegada": h.hora_llegada,
+            "recorrido_id": h.recorrido_id,
+            "directo": h.directo,
+            "origen": h.recorrido.origen if h.recorrido else None,
+            "destino": h.recorrido.destino if h.recorrido else None,
+            "linea_nombre": h.recorrido.linea.nombre if h.recorrido.linea else None
+        })
+    return resultado
 
 # ========== ENDPOINTS POST ==========
 @app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])

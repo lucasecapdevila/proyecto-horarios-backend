@@ -1,6 +1,6 @@
 # --- Importación de librerías ---
 from fastapi import FastAPI, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Literal
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -86,9 +86,16 @@ def get_lineas(db: Session = Depends(get_db)):
 
 @app.get('/recorridos/', response_model=List[schemas.Recorrido], tags=["Admin"])
 def get_recorridos(db: Session = Depends(get_db)):
-    """Obtener todos los recorridos (público, no requiere autenticación)"""
-    recorridos = db.query(models.Recorrido).all()
+    recorridos = db.query(models.Recorrido).options(
+        joinedload(models.Recorrido.linea)
+    )
     return recorridos
+
+@app.get('/horarios/', response_model=List[schemas.Horario], tags=["Admin"], dependencies=[Depends(get_admin_user)])
+def get_horarios(db: Session = Depends(get_db)):
+    """Obtener todos los horarios (SOLO Administradores autenticados)"""
+    horarios = db.query(models.Horario).all()
+    return horarios
 
 # ========== ENDPOINTS POST ==========
 @app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])

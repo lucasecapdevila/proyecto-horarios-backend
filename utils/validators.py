@@ -16,6 +16,8 @@ def validar_hora(hora: str):
         raise ValueError("El formato de hora debe ser HH:MM")
     return True
 
+# ==================== NUEVAS VALIDACIONES ====================
+
 def time_to_minutes(time_str: str) -> int:
     """Convierte hora HH:MM a minutos desde medianoche"""
     h, m = map(int, time_str.split(":"))
@@ -58,7 +60,8 @@ def validate_horario_duration(hora_salida: str, hora_llegada: str) -> None:
 
 def validate_recorrido_unique(db, origen: str, destino: str, linea_id: int, exclude_id: int = None):
     """
-    Valida que no exista un recorrido duplicado.
+    Valida que no exista un recorrido duplicado EN LA MISMA LÍNEA.
+    Dos líneas diferentes SÍ pueden tener el mismo origen-destino.
     exclude_id se usa al actualizar para excluir el registro actual.
     """
     from models import Recorrido
@@ -66,7 +69,7 @@ def validate_recorrido_unique(db, origen: str, destino: str, linea_id: int, excl
     query = db.query(Recorrido).filter(
         Recorrido.origen == origen,
         Recorrido.destino == destino,
-        Recorrido.linea_id == linea_id
+        Recorrido.linea_id == linea_id  # CLAVE: Solo validar en la misma línea
     )
     
     if exclude_id:
@@ -77,7 +80,7 @@ def validate_recorrido_unique(db, origen: str, destino: str, linea_id: int, excl
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya existe un recorrido {origen} → {destino} para esta línea"
+            detail=f"Ya existe un recorrido {origen} → {destino} en esta línea"
         )
 
 def validate_origen_destino_different(origen: str, destino: str) -> None:
@@ -90,12 +93,14 @@ def validate_origen_destino_different(origen: str, destino: str) -> None:
 
 def validate_horario_unique(db, recorrido_id: int, tipo_dia: str, hora_salida: str, exclude_id: int = None):
     """
-    Valida que no exista un horario duplicado exacto.
+    Valida que no exista un horario duplicado EN EL MISMO RECORRIDO.
+    - Mismo recorrido + mismo tipo_dia + misma hora_salida = DUPLICADO
+    - Diferentes recorridos pueden tener la misma hora (aunque sean de la misma línea)
     """
     from models import Horario
     
     query = db.query(Horario).filter(
-        Horario.recorrido_id == recorrido_id,
+        Horario.recorrido_id == recorrido_id,  # CLAVE: Solo validar en el mismo recorrido
         Horario.tipo_dia == tipo_dia,
         Horario.hora_salida == hora_salida
     )
@@ -108,7 +113,7 @@ def validate_horario_unique(db, recorrido_id: int, tipo_dia: str, hora_salida: s
     if existing:
         raise HTTPException(
             status_code=400,
-            detail=f"Ya existe un horario a las {hora_salida} para este recorrido en días {tipo_dia}"
+            detail=f"Ya existe un horario para este recorrido a las {hora_salida} en días {tipo_dia}"
         )
 
 def validate_linea_nombre(nombre: str) -> None:

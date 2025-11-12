@@ -88,8 +88,20 @@ def get_lineas(db: Session = Depends(get_db)):
 def get_recorridos(db: Session = Depends(get_db)):
     recorridos = db.query(models.Recorrido).options(
         joinedload(models.Recorrido.linea)
-    )
-    return recorridos
+    ).all()
+
+    resultado = []
+    for r in recorridos:
+        recorrido_dict = {
+            "id": r.id,
+            "origen": r.origen,
+            "destino": r.destino,
+            "linea_id": r.linea_id,
+            "linea_nombre": r.linea.nombre if r.linea else None,
+            "horarios": r.horarios
+        }
+        resultado.append(recorrido_dict)
+    return resultado
 
 @app.get('/horarios/', response_model=List[schemas.Horario], tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def get_horarios(db: Session = Depends(get_db)):

@@ -1,6 +1,6 @@
 # --- Importación de librerías ---
 from fastapi import FastAPI, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Literal
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -86,9 +86,16 @@ def get_lineas(db: Session = Depends(get_db)):
 
 @app.get('/recorridos/', response_model=List[schemas.Recorrido], tags=["Admin"])
 def get_recorridos(db: Session = Depends(get_db)):
-    """Obtener todos los recorridos (público, no requiere autenticación)"""
-    recorridos = db.query(models.Recorrido).all()
+    recorridos = db.query(models.Recorrido).options(
+        joinedload(models.Recorrido.linea)
+    )
     return recorridos
+
+@app.get('/horarios/', response_model=List[schemas.Horario], tags=["Admin"], dependencies=[Depends(get_admin_user)])
+def get_horarios(db: Session = Depends(get_db)):
+    """Obtener todos los horarios (SOLO Administradores autenticados)"""
+    horarios = db.query(models.Horario).all()
+    return horarios
 
 # ========== ENDPOINTS POST ==========
 @app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
@@ -212,6 +219,81 @@ def get_horarios_por_recorrido(
     raise HTTPException(status_code=404, detail="No se encontraron horarios")
   
   return horarios
+
+@app.get('/horarios-directos/', response_model=List[schemas.Horario], tags=["App"])
+def get_horarios_directos(
+    origen: str,
+    destino: str,
+    tipo_dia: Literal["habil", "sábado", "domingo"],
+    hora_actual: str = '00:00',
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene los próximos horarios directos entre dos ciudades sin conexiones.
+    
+    - origen: Ciudad de origen (ej: "Concepción", "San Miguel", "Leales")
+    - destino: Ciudad de destino
+    - tipo_dia: "habil", "sábado" o "domingo"
+    - hora_actual: Filtra horarios >= esta hora (formato HH:MM, default: 00:00)
+    
+    Retorna los horarios ordenados por hora de salida.
+    """
+    # Validar hora_actual
+    try:
+        partes = hora_actual.split(":")
+        if len(partes) != 2:
+            raise ValueError()
+        h, m = int(partes[0]), int(partes[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError()
+    except Exception:
+        raise HTTPException(
+            status_code=400, 
+            detail="hora_actual debe ser HH:MM entre 00:00 y 23:59"
+        )
+
+    # Buscar el recorrido que coincida con origen y destino
+    recorrido = db.query(models.Recorrido).filter(
+        models.Recorrido.origen == origen,
+        models.Recorrido.destino == destino
+    ).first()
+
+    if not recorrido:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No existe recorrido desde {origen} hacia {destino}"
+        )
+
+    # Obtener todos los horarios para ese recorrido y tipo de día
+    horarios = db.query(models.Horario).filter(
+        models.Horario.recorrido_id == recorrido.id,
+        models.Horario.tipo_dia == tipo_dia
+    ).order_by(models.Horario.hora_salida).all()
+
+    if not horarios:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No hay horarios disponibles para {origen} → {destino} en días {tipo_dia}"
+        )
+
+    # Filtrar por hora_actual (solo mostrar horarios futuros)
+    def str_to_minutos(hora):
+        h, m = map(int, hora.split(":"))
+        return h * 60 + m
+    
+    min_actual = str_to_minutos(hora_actual)
+    horarios_filtrados = [
+        h for h in horarios 
+        if str_to_minutos(h.hora_salida) >= min_actual
+    ]
+
+    if not horarios_filtrados:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay más horarios disponibles después de las {hora_actual}"
+        )
+
+    return horarios_filtrados
 
 @app.get('/conexiones/', response_model=List[schemas.Conexion], tags=["App"])
 def calcular_conexiones(tipo_dia: str, direccion: str = 'ida', hora_actual: str = '00:00', db: Session = Depends(get_db)):

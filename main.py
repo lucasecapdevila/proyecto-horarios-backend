@@ -10,6 +10,13 @@ import models, schemas
 from database import SessionLocal, engine, Base
 from auth.auth_routes import router as auth_router
 from auth.auth_utils import get_admin_user
+from utils.validators import (
+    validate_horario_duration,
+    validate_horario_unique,
+    validate_recorrido_unique,
+    validate_origen_destino_different,
+    validate_linea_nombre
+)
 
 # --- Importación del middleware de CORS ---
 from fastapi.middleware.cors import CORSMiddleware
@@ -127,6 +134,7 @@ def get_horarios(db: Session = Depends(get_db)):
 @app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def crear_linea(linea: schemas.LineaCreate, db: Session = Depends(get_db)):
     """Crear línea (Solo Administradores autenticados)"""
+    validate_linea_nombre(linea.nombre)
     db_linea = models.Linea(**linea.model_dump())
     db.add(db_linea)
     db.commit()
@@ -139,6 +147,8 @@ def update_linea(linea_id: int, linea: schemas.LineaCreate, db: Session = Depend
     db_linea = db.query(models.Linea).filter(models.Linea.id == linea_id).first()
     if not db_linea:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
+    
+    validate_linea_nombre(linea.nombre)
     db_linea.nombre = linea.nombre
     db.commit()
     db.refresh(db_linea)
@@ -158,9 +168,14 @@ def delete_linea(linea_id: int, db: Session = Depends(get_db)):
 @app.post('/recorridos/', response_model=schemas.Recorrido, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def crear_recorrido(recorrido: schemas.RecorridoCreate, db: Session = Depends(get_db)):
     """Crear recorrido (Solo Administradores autenticados)"""
+    validate_origen_destino_different(recorrido.origen, recorrido.destino)
+
     db_linea = db.query(models.Linea).filter(models.Linea.id == recorrido.linea_id).first()
     if not db_linea:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
+    
+    validate_recorrido_unique(db, recorrido.origen, recorrido.destino, recorrido.linea_id)
+
     db_recorrido = models.Recorrido(**recorrido.model_dump())
     db.add(db_recorrido)
     db.commit()
@@ -173,6 +188,10 @@ def update_recorrido(recorrido_id: int, recorrido: schemas.RecorridoCreate, db: 
     db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == recorrido_id).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+    
+    validate_origen_destino_different(recorrido.origen, recorrido.destino)
+    validate_recorrido_unique(db, recorrido.origen, recorrido.destino, recorrido.linea_id, exclude_id=recorrido_id)
+
     db_recorrido.origen = recorrido.origen
     db_recorrido.destino = recorrido.destino
     db_recorrido.linea_id = recorrido.linea_id
@@ -194,6 +213,9 @@ def delete_recorrido(recorrido_id: int, db: Session = Depends(get_db)):
 @app.post('/horarios/', response_model=schemas.HorarioConRecorrido, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def crear_horario(horario: schemas.HorarioCreate, db: Session = Depends(get_db)):
     """Crear horario (Solo Administradores autenticados)"""
+    validate_horario_duration(horario.hora_salida, horario.hora_llegada)
+    validate_horario_unique(db, horario.recorrido_id, horario.tipo_dia, horario.hora_salida)
+
     db_recorrido = db.query(models.Recorrido).join(models.Recorrido.linea).filter(models.Recorrido.id == horario.recorrido_id).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
@@ -220,6 +242,9 @@ def update_horario(horario_id: int, horario: schemas.HorarioCreate, db: Session 
     db_horario = db.query(models.Horario).filter(models.Horario.id == horario_id).first()
     if not db_horario:
         raise HTTPException(status_code=404, detail="Horario no encontrado")
+    
+    validate_horario_duration(horario.hora_salida, horario.hora_llegada)
+    validate_horario_unique(db, horario.recorrido_id, horario.tipo_dia, horario.hora_salida, exclude_id=horario_id)
     
     db_recorrido = db.query(models.Recorrido).join(models.Recorrido.linea).filter(models.Recorrido.id == horario.recorrido_id).first()
     if not db_recorrido:

@@ -33,6 +33,15 @@ class Horario(HorarioBase):
   class Config:
     from_attributes = True
 
+class HorarioConRecorrido(HorarioBase):
+  id: int
+  origen: str
+  destino:str
+  linea_nombre: str
+
+  class Config:
+    from_attributes = True
+
 # --- Esquemas para Recorridos ---
 class RecorridoBase(BaseModel):
   origen: str

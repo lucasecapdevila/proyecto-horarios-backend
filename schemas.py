@@ -53,6 +53,7 @@ class RecorridoCreate(RecorridoBase):
 
 class Recorrido(RecorridoBase):
   id: int
+  linea_nombre: Optional[str] = None
   horarios: List[Horario] = []
   class Config:
     from_attributes = True

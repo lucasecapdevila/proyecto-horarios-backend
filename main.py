@@ -88,14 +88,40 @@ def get_lineas(db: Session = Depends(get_db)):
 def get_recorridos(db: Session = Depends(get_db)):
     recorridos = db.query(models.Recorrido).options(
         joinedload(models.Recorrido.linea)
-    )
-    return recorridos
+    ).all()
 
-@app.get('/horarios/', response_model=List[schemas.Horario], tags=["Admin"], dependencies=[Depends(get_admin_user)])
+    resultado = []
+    for r in recorridos:
+        recorrido_dict = {
+            "id": r.id,
+            "origen": r.origen,
+            "destino": r.destino,
+            "linea_id": r.linea_id,
+            "linea_nombre": r.linea.nombre if r.linea else None,
+            "horarios": r.horarios
+        }
+        resultado.append(recorrido_dict)
+    return resultado
+
+@app.get('/horarios/', response_model=List[schemas.HorarioConRecorrido], tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def get_horarios(db: Session = Depends(get_db)):
     """Obtener todos los horarios (SOLO Administradores autenticados)"""
-    horarios = db.query(models.Horario).all()
-    return horarios
+    horarios = db.query(models.Horario).join(models.Horario.recorrido).join(models.Recorrido.linea).all()
+
+    resultado = []
+    for h in horarios:
+        resultado.append({
+            "id": h.id,
+            "tipo_dia": h.tipo_dia,
+            "hora_salida": h.hora_salida,
+            "hora_llegada": h.hora_llegada,
+            "recorrido_id": h.recorrido_id,
+            "directo": h.directo,
+            "origen": h.recorrido.origen if h.recorrido else None,
+            "destino": h.recorrido.destino if h.recorrido else None,
+            "linea_nombre": h.recorrido.linea.nombre if h.recorrido.linea else None
+        })
+    return resultado
 
 # ========== ENDPOINTS POST ==========
 @app.post('/lineas/', response_model=schemas.Linea, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
@@ -165,24 +191,40 @@ def delete_recorrido(recorrido_id: int, db: Session = Depends(get_db)):
     return None
 
 # CRUD para horarios
-@app.post('/horarios/', response_model=schemas.Horario, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
+@app.post('/horarios/', response_model=schemas.HorarioConRecorrido, status_code=status.HTTP_201_CREATED, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def crear_horario(horario: schemas.HorarioCreate, db: Session = Depends(get_db)):
     """Crear horario (Solo Administradores autenticados)"""
-    db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == horario.recorrido_id).first()
+    db_recorrido = db.query(models.Recorrido).join(models.Recorrido.linea).filter(models.Recorrido.id == horario.recorrido_id).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+    
     db_horario = models.Horario(**horario.model_dump())
     db.add(db_horario)
     db.commit()
     db.refresh(db_horario)
-    return db_horario
+    return {
+        "id": db_horario.id,
+        "tipo_dia": db_horario.tipo_dia,
+        "hora_salida": db_horario.hora_salida,
+        "hora_llegada": db_horario.hora_llegada,
+        "recorrido_id": db_horario.recorrido_id,
+        "directo": db_horario.directo,
+        "origen": db_recorrido.origen,
+        "destino": db_recorrido.destino,
+        "linea_nombre": db_recorrido.linea.nombre if db_recorrido.linea else None
+    }
 
-@app.put('/horarios/{horario_id}', response_model=schemas.Horario, tags=["Admin"], dependencies=[Depends(get_admin_user)])
+@app.put('/horarios/{horario_id}', response_model=schemas.HorarioConRecorrido, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def update_horario(horario_id: int, horario: schemas.HorarioCreate, db: Session = Depends(get_db)):
     """Actualizar horario (Solo Administradores autenticados)"""
     db_horario = db.query(models.Horario).filter(models.Horario.id == horario_id).first()
     if not db_horario:
         raise HTTPException(status_code=404, detail="Horario no encontrado")
+    
+    db_recorrido = db.query(models.Recorrido).join(models.Recorrido.linea).filter(models.Recorrido.id == horario.recorrido_id).first()
+    if not db_recorrido:
+        raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+
     db_horario.tipo_dia = horario.tipo_dia
     db_horario.hora_salida = horario.hora_salida
     db_horario.hora_llegada = horario.hora_llegada
@@ -190,7 +232,17 @@ def update_horario(horario_id: int, horario: schemas.HorarioCreate, db: Session 
     db_horario.directo = horario.directo
     db.commit()
     db.refresh(db_horario)
-    return db_horario
+    return {
+        "id": db_horario.id,
+        "tipo_dia": db_horario.tipo_dia,
+        "hora_salida": db_horario.hora_salida,
+        "hora_llegada": db_horario.hora_llegada,
+        "recorrido_id": db_horario.recorrido_id,
+        "directo": db_horario.directo,
+        "origen": db_recorrido.origen,
+        "destino": db_recorrido.destino,
+        "linea_nombre": db_recorrido.linea.nombre if db_recorrido.linea else None
+    }
 
 @app.delete('/horarios/{horario_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def delete_horario(horario_id: int, db: Session = Depends(get_db)):

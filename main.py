@@ -37,9 +37,10 @@ app = FastAPI(
 
 # --- Configuración del middleware de CORS ---
 origins = [
-  "http://localhost:5173",
-  "http://localhost:3000",
-  "https://api-horarios-8uro.onrender.com/"
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://tucubus-backend.onrender.com",
+    "https://tucubus-frontend.vercel.app"
 ]
 
 app.add_middleware(

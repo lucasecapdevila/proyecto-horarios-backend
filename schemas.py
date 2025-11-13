@@ -78,6 +78,9 @@ class Conexion(BaseModel):
   tramo_b_salida: str
   tramo_b_llegada: str
   tiempo_espera_min: int
+  ciudad_conexion: str
+  linea_a_nombre: Optional[str] = None
+  linea_b_nombre: Optional[str] = None
 
 class UserBase(BaseModel):
   username: str = Field(..., min_length=3, max_length=25)

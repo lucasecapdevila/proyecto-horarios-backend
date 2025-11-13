@@ -297,7 +297,7 @@ def get_horarios_por_recorrido(
   
   return horarios
 
-@app.get('/horarios-directos/', response_model=List[schemas.Horario], tags=["App"])
+@app.get('/horarios-directos/', response_model=List[schemas.HorarioConRecorrido], tags=["App"])
 def get_horarios_directos(
     origen: str,
     destino: str,
@@ -328,48 +328,46 @@ def get_horarios_directos(
             status_code=400, 
             detail="hora_actual debe ser HH:MM entre 00:00 y 23:59"
         )
-
-    # Buscar el recorrido que coincida con origen y destino
-    recorrido = db.query(models.Recorrido).filter(
+    
+    horarios_completos = db.query(models.Horario).join(models.Horario.recorrido).join(models.Recorrido.linea).filter(
         models.Recorrido.origen == origen,
-        models.Recorrido.destino == destino
-    ).first()
-
-    if not recorrido:
-        raise HTTPException(
-            status_code=404, 
-            detail=f"No existe recorrido desde {origen} hacia {destino}"
-        )
-
-    # Obtener todos los horarios para ese recorrido y tipo de día
-    horarios = db.query(models.Horario).filter(
-        models.Horario.recorrido_id == recorrido.id,
-        models.Horario.tipo_dia == tipo_dia
+        models.Recorrido.destino == destino,
+        models.Horario.tipo_dia == tipo_dia,
     ).order_by(models.Horario.hora_salida).all()
 
-    if not horarios:
+    if not horarios_completos:
         raise HTTPException(
             status_code=404, 
-            detail=f"No hay horarios disponibles para {origen} → {destino} en días {tipo_dia}"
+            detail=f"No existe recorrido directo o no hay horarios disponibles para {origen} → {destino} en días {tipo_dia}"
         )
-
-    # Filtrar por hora_actual (solo mostrar horarios futuros)
+    
     def str_to_minutos(hora):
         h, m = map(int, hora.split(":"))
         return h * 60 + m
     
     min_actual = str_to_minutos(hora_actual)
-    horarios_filtrados = [
-        h for h in horarios 
-        if str_to_minutos(h.hora_salida) >= min_actual
-    ]
+
+    horarios_filtrados = []
+    for horario in horarios_completos:
+        if str_to_minutos(horario.hora_salida) >= min_actual:
+            horarios_filtrados.append({
+                "id": horario.id,
+                "tipo_dia": horario.tipo_dia,
+                "hora_salida": horario.hora_salida,
+                "hora_llegada": horario.hora_llegada,
+                "recorrido_id": horario.recorrido_id,
+                "directo": horario.directo,
+                "origen": horario.recorrido.origen if horario.recorrido else None,
+                "destino": horario.recorrido.destino if horario.recorrido else None,
+                "linea_nombre": horario.recorrido.linea.nombre if horario.recorrido else None
+            })
 
     if not horarios_filtrados:
         raise HTTPException(
             status_code=404,
             detail=f"No hay más horarios disponibles después de las {hora_actual}"
         )
-
+    
     return horarios_filtrados
 
 @app.get('/conexiones/', response_model=List[schemas.Conexion], tags=["App"])

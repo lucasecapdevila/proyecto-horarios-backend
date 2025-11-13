@@ -479,7 +479,7 @@ def calcular_conexiones(
         )
     
     # Ordenar por el tiempo total de viaje
-    conexiones_encontradas.sort(key=lambda c: datetime.strptime(c.tramo_b_llegada, FMT))
+    conexiones_encontradas.sort(key=lambda c: datetime.strptime(c.tramo_a_salida, FMT))
 
     return conexiones_encontradas
 

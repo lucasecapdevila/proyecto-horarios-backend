@@ -371,14 +371,18 @@ def get_horarios_directos(
     return horarios_filtrados
 
 @app.get('/conexiones/', response_model=List[schemas.Conexion], tags=["App"])
-def calcular_conexiones(tipo_dia: str, direccion: str = 'ida', hora_actual: str = '00:00', db: Session = Depends(get_db)):
+def calcular_conexiones(
+    origen: str,
+    destino: str,
+    tipo_dia: Literal["habil", "sábado", "domingo"],
+    hora_actual: str = '00:00',
+    db: Session = Depends(get_db)
+):
     """
-    Calcula las conexiones óptimas solo para las que estén disponibles a partir de la hora_actual.
-    - tipo_dia: "habil", "sábado" o "domingo" (requerido)
-    - direccion: "ida" o "vuelta" (default: ida)
-    - hora_actual: solo devuelve las conexiones cuya salida de A sea >= hora_actual (default: 00:00)
+    Calcula las conexiones óptimas (Origen -> Conexión -> Destino) a partir de la hora_actual.
     """
-    # Validar hora_actual (igual que en HorarioBase)
+
+    # Validar hora_actual 
     try:
         partes = hora_actual.split(":")
         if len(partes) != 2:
@@ -388,72 +392,98 @@ def calcular_conexiones(tipo_dia: str, direccion: str = 'ida', hora_actual: str 
             raise ValueError()
     except Exception:
         raise HTTPException(status_code=400, detail="hora_actual debe ser HH:MM entre 00:00 y 23:59")
-
-    # Este es el principal endpoint. Busca conexiones entre el Tramo A y el Tramo B
-    # Dependiendo de la dirección, se asignan los tramos correspondientes
-    # dirección "ida": Tramo A = Concepción -> San Miguel, Tramo B = San Miguel -> Leales
-    # dirección "vuelta": Tramo A = Leales -> San Miguel, Tramo B = San Miguel -> Concepción
-
-    # Asignamos los IDs de los tramos según la dirección
-    if direccion == "ida":
-        ID_TRAMO_A = 1  # ID del Recorrido Tramo A
-        id_TRAMO_B = 2  # ID del Recorrido Tramo B
-    else:  # dirección == "vuelta"
-        ID_TRAMO_A = 3  # ID del Recorrido Tramo A (vuelta)
-        id_TRAMO_B = 4  # ID del Recorrido Tramo B (vuelta)
-
-    # Obtener horarios del Tramo A
-    horarios_tramo_a = db.query(models.Horario).filter(
-        models.Horario.recorrido_id == ID_TRAMO_A,
-        models.Horario.tipo_dia == tipo_dia
-    ).order_by(models.Horario.hora_salida).all()
-
-    # Obtener horarios del Tramo B
-    horarios_tramo_b = db.query(models.Horario).filter(
-        models.Horario.recorrido_id == id_TRAMO_B,
-        models.Horario.tipo_dia == tipo_dia
-    ).order_by(models.Horario.hora_salida).all()
-
-    if not horarios_tramo_a or not horarios_tramo_b:
-        raise HTTPException(status_code=404, detail="No se encontraron horarios para la conexión en ese tipo de día")
     
-    # Buscar conexiones
-    conexiones_encontradas = []
     FMT = "%H:%M"
-    for horario_a in horarios_tramo_a:
-        for horario_b in horarios_tramo_b:
-            try:
-                llegada_a = datetime.strptime(horario_a.hora_llegada, FMT)
-                salida_b = datetime.strptime(horario_b.hora_salida, FMT)
-            except ValueError:
-                continue  # Saltar horarios con formato incorrecto
 
-            # Si la salida del Tramo B es DESPUÉS de la llegada del Tramo A
-            if salida_b > llegada_a:
-                #* Se encuentra una conexión válida
-                diferencia = salida_b - llegada_a
-                espera_min = int(diferencia.total_seconds() / 60)
+    # 1. Encontrar posibles ciudades de conexión
+    ciudades_de_salida = db.query(models.Recorrido.origen).distinct().all()
+    ciudades_de_llegada = db.query(models.Recorrido.destino).distinct().all()
+    ciudades_conocidas = set([c[0] for c in ciudades_de_salida] + [c[0] for c in ciudades_de_llegada])
 
-                conexion = schemas.Conexion(
-                    tramo_a_salida=horario_a.hora_salida,
-                    tramo_a_llegada=horario_a.hora_llegada,
-                    tramo_b_salida=horario_b.hora_salida,
-                    tramo_b_llegada=horario_b.hora_llegada,
-                    tiempo_espera_min=espera_min
-                )
-                conexiones_encontradas.append(conexion)
-                break  # Pasar al siguiente horario del Tramo A después de encontrar la primera conexión válida
+    posibles_conexiones = [c for c in ciudades_conocidas if c != origen and c != destino]
+
+    conexiones_encontradas = []
+
+    for ciudad_conexion in posibles_conexiones:
+        # A. Buscar RECORRIDOS para Tramo A (Origen -> Conexión)
+        recorridos_a = db.query(models.Recorrido).filter(
+            models.Recorrido.origen == origen,
+            models.Recorrido.destino == ciudad_conexion
+        ).all()
+
+        # B. Buscar RECORRIDOS para Tramo B (Conexión -> Destino)
+        recorridos_b = db.query(models.Recorrido).filter(
+            models.Recorrido.origen == ciudad_conexion,
+            models.Recorrido.destino == destino
+        ).all()
+
+        # C. Buscar HORARIOS para RECORRIDOS A y RECORRIDOS B, filtrando por tipo_dia
+        horarios_a = db.query(models.Horario).filter(
+            models.Horario.recorrido_id.in_([r.id for r in recorridos_a]),
+            models.Horario.tipo_dia == tipo_dia
+        ).order_by(models.Horario.hora_salida).all()
+
+        horarios_b = db.query(models.Horario).filter(
+            models.Horario.recorrido_id.in_([r.id for r in recorridos_b]),
+            models.Horario.tipo_dia == tipo_dia
+        ).order_by(models.Horario.hora_salida).all()
+        
+        # D. Buscar la conexión y filtrar por hora_actual
+        def str_to_minutos(hora):
+            h, m = map(int, hora.split(":"))
+            return h * 60 + m
+        min_actual = str_to_minutos(hora_actual)
+
+        for horario_a in horarios_a:
+            if str_to_minutos(horario_a.hora_salida) < min_actual:
+                continue  # Saltar horarios antes de hora_actual
+
+            llegada_a = datetime.strptime(horario_a.hora_llegada, FMT)
+
+            for horario_b in horarios_b:
+                try:
+                    salida_b = datetime.strptime(horario_b.hora_salida, FMT)
+                except ValueError:
+                    continue
+
+                # Validar la conexión: salida_b > llegada_a
+                if salida_b > llegada_a:
+                    diferencia = salida_b - llegada_a
+                    espera_min = int(diferencia.total_seconds() / 60)
+
+                    # Se encontró una conexión válida
+                    linea_a_nombre = db.query(models.Linea.nombre).join(models.Recorrido).filter(
+                        models.Recorrido.id == horario_a.recorrido_id
+                    ).scalar()
+                    linea_b_nombre = db.query(models.Linea.nombre).join(models.Recorrido).filter(
+                        models.Recorrido.id == horario_b.recorrido_id
+                    ).scalar()
+
+                    conexion = schemas.Conexion(
+                        tramo_a_salida=horario_a.hora_salida,
+                        tramo_a_llegada=horario_a.hora_llegada,
+                        tramo_b_salida=horario_b.hora_salida,
+                        tramo_b_llegada=horario_b.hora_llegada,
+                        tiempo_espera_min=espera_min,
+                        ciudad_conexion=ciudad_conexion,
+                        linea_a_nombre=linea_a_nombre,
+                        linea_b_nombre=linea_b_nombre
+                    )
+                    conexiones_encontradas.append(conexion)
+                    break
 
     if not conexiones_encontradas:
-        raise HTTPException(status_code=404, detail="No se encontraron combinaciones")
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontraron combinaciones de conexiones posibles."
+        )
     
-    # Añadir filtro por hora_actual
-    def str_to_minutos(hora):
-        h, m = map(int, hora.split(":"))
-        return h*60 + m
-    min_actual = str_to_minutos(hora_actual)
-    conexiones_filtradas = [c for c in conexiones_encontradas if str_to_minutos(c.tramo_a_salida) >= min_actual]
-    return conexiones_filtradas
+    # Ordenar por el tiempo total de viaje
+    conexiones_encontradas.sort(key=lambda c: datetime.strptime(c.tramo_b_llegada, FMT))
+
+    return conexiones_encontradas
+
+
 
 # --- CRUD de usuarios solo para administradores ---
 @app.get('/users/', response_model=List[schemas.UserOut], tags=["Usuarios"], dependencies=[Depends(get_admin_user)])

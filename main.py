@@ -59,6 +59,11 @@ def get_db():
   finally:
     db.close()
 
+@app.get("/debug-db")
+def debug_db():
+    import os
+    return {"DATABASE_URL": os.getenv("DATABASE_URL")}
+
 # --- Rutas de la API ---
 # ========== ENDPOINT RAÍZ ==========
 @app.get('/', tags=["Info"])

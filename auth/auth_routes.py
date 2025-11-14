@@ -22,7 +22,7 @@ def register_user(user: UserRegister, db: Session = Depends(get_db)):
     if existing_user:
         raise HTTPException(status_code=400, detail="El nombre de usuario ya existe")
     from models import RoleEnum
-    new_user = create_user(db, user.username, user.userpassword, RoleEnum.admin)
+    new_user = create_user(db, user.username, user.userpassword, RoleEnum.user)
     return new_user
 
 @router.post("/login", response_model=Token)

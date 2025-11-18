@@ -162,10 +162,23 @@ def update_linea(linea_id: int, linea: schemas.LineaCreate, db: Session = Depend
 
 @app.delete('/lineas/{linea_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def delete_linea(linea_id: int, db: Session = Depends(get_db)):
-    """Eliminar línea (Solo Administradores autenticados)"""
+    """Eliminar línea (Solo si no tiene recorridos asociados)"""
+    
+    # 1. Buscar la línea
     db_linea = db.query(models.Linea).filter(models.Linea.id == linea_id).first()
     if not db_linea:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
+    
+    # 2. VERIFICACIÓN DE SEGURIDAD: ¿Tiene recorridos hijos?
+    tiene_recorridos = db.query(models.Recorrido).filter(models.Recorrido.linea_id == linea_id).first()
+    
+    if tiene_recorridos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="No se puede eliminar la línea porque tiene recorridos asociados. Elimina los recorridos primero."
+        )
+
+    # 3. Si está limpia, proceder a borrar
     db.delete(db_linea)
     db.commit()
     return None
@@ -207,10 +220,24 @@ def update_recorrido(recorrido_id: int, recorrido: schemas.RecorridoCreate, db: 
 
 @app.delete('/recorridos/{recorrido_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def delete_recorrido(recorrido_id: int, db: Session = Depends(get_db)):
-    """Eliminar recorrido (Solo Administradores autenticados)"""
+    """Eliminar recorrido (Solo si no tiene horarios asociados)"""
+    
+    # 1. Buscar el recorrido
     db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == recorrido_id).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+    
+    # 2. VERIFICACIÓN DE SEGURIDAD: ¿Tiene horarios hijos?
+    # Consultamos si existe al menos un horario asociado a este recorrido_id
+    tiene_horarios = db.query(models.Horario).filter(models.Horario.recorrido_id == recorrido_id).first()
+    
+    if tiene_horarios:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="No se puede eliminar el recorrido porque tiene horarios asociados. Elimina los horarios primero."
+        )
+
+    # 3. Si está limpio, proceder a borrar
     db.delete(db_recorrido)
     db.commit()
     return None

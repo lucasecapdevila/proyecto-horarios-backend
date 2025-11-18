@@ -161,24 +161,73 @@ def update_linea(linea_id: int, linea: schemas.LineaCreate, db: Session = Depend
     return db_linea
 
 @app.delete('/lineas/{linea_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
-def delete_linea(linea_id: int, db: Session = Depends(get_db)):
-    """Eliminar línea (Solo si no tiene recorridos asociados)"""
+def delete_linea(
+    linea_id: int,
+    force: bool = Query(False, description="Forzar eliminación en cascada"),
+    db: Session = Depends(get_db)
+):
+    """
+    Eliminar línea con opción de cascada.
     
+    - Si force=False y hay recorridos asociados, devuelve 409 con detalles
+    - Si force=True, elimina en cascada todos los datos asociados
+    """
     # 1. Buscar la línea
     db_linea = db.query(models.Linea).filter(models.Linea.id == linea_id).first()
     if not db_linea:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
     
-    # 2. VERIFICACIÓN DE SEGURIDAD: ¿Tiene recorridos hijos?
-    tiene_recorridos = db.query(models.Recorrido).filter(models.Recorrido.linea_id == linea_id).first()
+    # 2. Buscar recorridos asociados
+    recorridos = db.query(models.Recorrido).filter(
+        models.Recorrido.linea_id == linea_id
+    ).all()
     
-    if tiene_recorridos:
+    # 3. Si hay recorridos y no es force, devolver conflicto con detalles
+    if recorridos and not force:
+        # Calcular total de horarios afectados
+        total_horarios = 0
+        for recorrido in recorridos:
+            count = db.query(models.Horario).filter(
+                models.Horario.recorrido_id == recorrido.id
+            ).count()
+            total_horarios += count
+        
+        # Preparar información de recorridos
+        recorridos_info = [
+            {
+                "id": r.id,
+                "origen": r.origen,
+                "destino": r.destino
+            }
+            for r in recorridos
+        ]
+        
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="No se puede eliminar la línea porque tiene recorridos asociados. Elimina los recorridos primero."
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "La línea tiene datos asociados que serán eliminados",
+                "recorridos_count": len(recorridos),
+                "horarios_count": total_horarios,
+                "recorridos": recorridos_info
+            }
         )
-
-    # 3. Si está limpia, proceder a borrar
+    
+    # 4. Si force=True, eliminar en cascada
+    if force and recorridos:
+        for recorrido in recorridos:
+            # Eliminar horarios del recorrido
+            db.query(models.Horario).filter(
+                models.Horario.recorrido_id == recorrido.id
+            ).delete()
+            # Eliminar el recorrido
+            db.delete(recorrido)
+        
+        # Eliminar la línea
+        db.delete(db_linea)
+        db.commit()
+        return None
+    
+    # 5. Si no hay recorridos, eliminar directamente
     db.delete(db_linea)
     db.commit()
     return None

@@ -535,13 +535,34 @@ def update_usuario(user_id: int, user: schemas.UserCreate, db: Session = Depends
     db.refresh(db_user)
     return db_user
 
-@app.delete('/users/{user_id}', status_code=204, tags=["Usuarios"], dependencies=[Depends(get_admin_user)])
-def delete_usuario(user_id: int, db: Session = Depends(get_db)):
+@app.delete('/users/{user_id}', status_code=204, tags=["Usuarios"])
+def delete_usuario(user_id: int, db: Session = Depends(get_db), currentUser: models.User = Depends(get_admin_user)):
     """Eliminar usuario (SOLO Administradores autenticados)"""
-    db_user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not db_user:
+    user_to_delete = db.query(models.User).filter(models.User.id == user_id).first()
+
+    if not user_to_delete:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    db.delete(db_user)
+
+    # --- VALIDACIÓN 1: No eliminarse a sí mismo ---
+    if currentUser.id == user_to_delete.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="No puedes eliminar tu propia cuenta."
+        )
+    
+    # --- VALIDACIÓN 2: No eliminar al último admin ---
+    # Solo nos preocupa si el usuario a eliminar es admin
+    if user_to_delete.role == "admin": # Asegúrate que tu campo se llama 'role' o similar
+        admin_count = db.query(models.User).filter(models.User.role == "admin").count()
+
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se puede eliminar. Debe quedar al menos un administrador."
+            )
+
+    # Si pasa todo, borrar
+    db.delete(user_to_delete)
     db.commit()
     return None
 

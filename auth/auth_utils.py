@@ -65,7 +65,7 @@ def get_db_dep():
         db.close()
 
 # Dependencia: obtiene el usuario autenticado (levanta error si token es inválido o no hay user)
-def get_current_user_from_token(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db_dep)) -> User:
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db_dep)) -> User:
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido o expirado")
@@ -87,7 +87,7 @@ def get_current_user_optional(token: str = Depends(oauth2_scheme), db: Session =
     return user
 
 # Dependencia: SOLO deja pasar a usuarios administrador, y da error 403 si no lo es
-def get_admin_user(current_user: User = Depends(get_current_user_from_token)) -> User:
+def get_admin_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != RoleEnum.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

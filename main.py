@@ -268,25 +268,53 @@ def update_recorrido(recorrido_id: int, recorrido: schemas.RecorridoCreate, db: 
     return db_recorrido
 
 @app.delete('/recorridos/{recorrido_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
-def delete_recorrido(recorrido_id: int, db: Session = Depends(get_db)):
-    """Eliminar recorrido (Solo si no tiene horarios asociados)"""
+def delete_recorrido(
+    recorrido_id: int,
+    force: bool = Query(False, description="Forzar eliminación en cascada"),
+    db: Session = Depends(get_db)
+):
+    """
+    Eliminar recorrido con opción de cascada.
     
+    - Si force=False y hay horarios asociados, devuelve 409 con detalles
+    - Si force=True, elimina en cascada todos los horarios asociados
+    """
     # 1. Buscar el recorrido
-    db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == recorrido_id).first()
+    db_recorrido = db.query(models.Recorrido).filter(
+        models.Recorrido.id == recorrido_id
+    ).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
     
-    # 2. VERIFICACIÓN DE SEGURIDAD: ¿Tiene horarios hijos?
-    # Consultamos si existe al menos un horario asociado a este recorrido_id
-    tiene_horarios = db.query(models.Horario).filter(models.Horario.recorrido_id == recorrido_id).first()
+    # 2. Buscar horarios asociados
+    horarios = db.query(models.Horario).filter(
+        models.Horario.recorrido_id == recorrido_id
+    ).all()
     
-    if tiene_horarios:
+    # 3. Si hay horarios y no es force, devolver conflicto con detalles
+    if horarios and not force:
+        # Tomar los primeros 10 IDs como preview
+        horarios_preview = [h.id for h in horarios[:10]]
+        
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="No se puede eliminar el recorrido porque tiene horarios asociados. Elimina los horarios primero."
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "El recorrido tiene horarios asociados que serán eliminados",
+                "horarios_count": len(horarios),
+                "horarios_preview": horarios_preview
+            }
         )
-
-    # 3. Si está limpio, proceder a borrar
+    
+    # 4. Si force=True, eliminar en cascada
+    if force and horarios:
+        db.query(models.Horario).filter(
+            models.Horario.recorrido_id == recorrido_id
+        ).delete()
+        db.delete(db_recorrido)
+        db.commit()
+        return None
+    
+    # 5. Si no hay horarios, eliminar directamente
     db.delete(db_recorrido)
     db.commit()
     return None

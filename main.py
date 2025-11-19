@@ -346,6 +346,35 @@ def crear_horario(horario: schemas.HorarioCreate, db: Session = Depends(get_db))
         "linea_nombre": db_recorrido.linea.nombre if db_recorrido.linea else None
     }
 
+@app.post('/horarios/bulk-delete', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
+def delete_horarios_bulk(
+    request: schemas.BulkDeleteRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Eliminar múltiples horarios de una vez.
+    Máximo 500 horarios por solicitud.
+    """
+    # Validar que los IDs existan
+    horarios_existentes = db.query(models.Horario).filter(
+        models.Horario.id.in_(request.ids)
+    ).all()
+    
+    if not horarios_existentes:
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontraron horarios con los IDs proporcionados"
+        )
+    
+    # Eliminar los horarios
+    deleted_count = db.query(models.Horario).filter(
+        models.Horario.id.in_(request.ids)
+    ).delete(synchronize_session=False)
+    
+    db.commit()
+    
+    return None
+
 @app.put('/horarios/{horario_id}', response_model=schemas.HorarioConRecorrido, tags=["Admin"], dependencies=[Depends(get_admin_user)])
 def update_horario(horario_id: int, horario: schemas.HorarioCreate, db: Session = Depends(get_db)):
     """Actualizar horario (Solo Administradores autenticados)"""

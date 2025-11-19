@@ -58,6 +58,18 @@ class Recorrido(RecorridoBase):
   class Config:
     from_attributes = True
 
+class RecorridoInfo(BaseModel):
+    """Información básica de recorrido para respuestas de conflicto"""
+    id: int
+    origen: str
+    destino: str
+
+class DeleteConflictRecorrido(BaseModel):
+    """Respuesta cuando un recorrido tiene horarios asociados"""
+    message: str
+    horarios_count: int
+    horarios_preview: List[int]  # IDs de los primeros 10 horarios
+
 # --- Esquemas para Lineas ---
 class LineaBase(BaseModel):
   nombre: str
@@ -70,6 +82,17 @@ class Linea(LineaBase):
   recorridos: List[Recorrido] = []
   class Config:
     from_attributes = True
+
+class DeleteConflictLinea(BaseModel):
+    """Respuesta cuando una línea tiene datos asociados"""
+    message: str
+    recorridos_count: int
+    horarios_count: int
+    recorridos: List[RecorridoInfo]
+
+class BulkDeleteRequest(BaseModel):
+    """Request para eliminación múltiple"""
+    ids: List[int] = Field(..., min_items=1, max_items=500)
 
 # --- Esquema para la Conexión ---
 class Conexion(BaseModel):

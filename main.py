@@ -161,11 +161,73 @@ def update_linea(linea_id: int, linea: schemas.LineaCreate, db: Session = Depend
     return db_linea
 
 @app.delete('/lineas/{linea_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
-def delete_linea(linea_id: int, db: Session = Depends(get_db)):
-    """Eliminar línea (Solo Administradores autenticados)"""
+def delete_linea(
+    linea_id: int,
+    force: bool = Query(False, description="Forzar eliminación en cascada"),
+    db: Session = Depends(get_db)
+):
+    """
+    Eliminar línea con opción de cascada.
+    
+    - Si force=False y hay recorridos asociados, devuelve 409 con detalles
+    - Si force=True, elimina en cascada todos los datos asociados
+    """
+    # 1. Buscar la línea
     db_linea = db.query(models.Linea).filter(models.Linea.id == linea_id).first()
     if not db_linea:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
+    
+    # 2. Buscar recorridos asociados
+    recorridos = db.query(models.Recorrido).filter(
+        models.Recorrido.linea_id == linea_id
+    ).all()
+    
+    # 3. Si hay recorridos y no es force, devolver conflicto con detalles
+    if recorridos and not force:
+        # Calcular total de horarios afectados
+        total_horarios = 0
+        for recorrido in recorridos:
+            count = db.query(models.Horario).filter(
+                models.Horario.recorrido_id == recorrido.id
+            ).count()
+            total_horarios += count
+        
+        # Preparar información de recorridos
+        recorridos_info = [
+            {
+                "id": r.id,
+                "origen": r.origen,
+                "destino": r.destino
+            }
+            for r in recorridos
+        ]
+        
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "La línea tiene datos asociados que serán eliminados",
+                "recorridos_count": len(recorridos),
+                "horarios_count": total_horarios,
+                "recorridos": recorridos_info
+            }
+        )
+    
+    # 4. Si force=True, eliminar en cascada
+    if force and recorridos:
+        for recorrido in recorridos:
+            # Eliminar horarios del recorrido
+            db.query(models.Horario).filter(
+                models.Horario.recorrido_id == recorrido.id
+            ).delete()
+            # Eliminar el recorrido
+            db.delete(recorrido)
+        
+        # Eliminar la línea
+        db.delete(db_linea)
+        db.commit()
+        return None
+    
+    # 5. Si no hay recorridos, eliminar directamente
     db.delete(db_linea)
     db.commit()
     return None
@@ -206,11 +268,53 @@ def update_recorrido(recorrido_id: int, recorrido: schemas.RecorridoCreate, db: 
     return db_recorrido
 
 @app.delete('/recorridos/{recorrido_id}', status_code=204, tags=["Admin"], dependencies=[Depends(get_admin_user)])
-def delete_recorrido(recorrido_id: int, db: Session = Depends(get_db)):
-    """Eliminar recorrido (Solo Administradores autenticados)"""
-    db_recorrido = db.query(models.Recorrido).filter(models.Recorrido.id == recorrido_id).first()
+def delete_recorrido(
+    recorrido_id: int,
+    force: bool = Query(False, description="Forzar eliminación en cascada"),
+    db: Session = Depends(get_db)
+):
+    """
+    Eliminar recorrido con opción de cascada.
+    
+    - Si force=False y hay horarios asociados, devuelve 409 con detalles
+    - Si force=True, elimina en cascada todos los horarios asociados
+    """
+    # 1. Buscar el recorrido
+    db_recorrido = db.query(models.Recorrido).filter(
+        models.Recorrido.id == recorrido_id
+    ).first()
     if not db_recorrido:
         raise HTTPException(status_code=404, detail="Recorrido no encontrado")
+    
+    # 2. Buscar horarios asociados
+    horarios = db.query(models.Horario).filter(
+        models.Horario.recorrido_id == recorrido_id
+    ).all()
+    
+    # 3. Si hay horarios y no es force, devolver conflicto con detalles
+    if horarios and not force:
+        # Tomar los primeros 10 IDs como preview
+        horarios_preview = [h.id for h in horarios[:10]]
+        
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "El recorrido tiene horarios asociados que serán eliminados",
+                "horarios_count": len(horarios),
+                "horarios_preview": horarios_preview
+            }
+        )
+    
+    # 4. Si force=True, eliminar en cascada
+    if force and horarios:
+        db.query(models.Horario).filter(
+            models.Horario.recorrido_id == recorrido_id
+        ).delete()
+        db.delete(db_recorrido)
+        db.commit()
+        return None
+    
+    # 5. Si no hay horarios, eliminar directamente
     db.delete(db_recorrido)
     db.commit()
     return None
@@ -535,13 +639,34 @@ def update_usuario(user_id: int, user: schemas.UserCreate, db: Session = Depends
     db.refresh(db_user)
     return db_user
 
-@app.delete('/users/{user_id}', status_code=204, tags=["Usuarios"], dependencies=[Depends(get_admin_user)])
-def delete_usuario(user_id: int, db: Session = Depends(get_db)):
+@app.delete('/users/{user_id}', status_code=204, tags=["Usuarios"])
+def delete_usuario(user_id: int, db: Session = Depends(get_db), currentUser: models.User = Depends(get_admin_user)):
     """Eliminar usuario (SOLO Administradores autenticados)"""
-    db_user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not db_user:
+    user_to_delete = db.query(models.User).filter(models.User.id == user_id).first()
+
+    if not user_to_delete:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    db.delete(db_user)
+
+    # --- VALIDACIÓN 1: No eliminarse a sí mismo ---
+    if currentUser.id == user_to_delete.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="No puedes eliminar tu propia cuenta."
+        )
+    
+    # --- VALIDACIÓN 2: No eliminar al último admin ---
+    # Solo nos preocupa si el usuario a eliminar es admin
+    if user_to_delete.role == "admin": # Asegúrate que tu campo se llama 'role' o similar
+        admin_count = db.query(models.User).filter(models.User.role == "admin").count()
+
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se puede eliminar. Debe quedar al menos un administrador."
+            )
+
+    # Si pasa todo, borrar
+    db.delete(user_to_delete)
     db.commit()
     return None
 
